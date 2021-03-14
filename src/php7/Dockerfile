@@ -1,67 +1,57 @@
-FROM php:7-fpm
+FROM php:7.3-fpm-stretch
 
-RUN apt-get update
-
-# Install iconv, mcryot, gd
 RUN apt-get update && apt-get install -y \
-        libfreetype6-dev \
-        libjpeg62-turbo-dev \
-        libmcrypt-dev \
-        libpng-dev \
-    && docker-php-ext-install -j$(nproc) iconv \
-    && docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
-    && docker-php-ext-install -j$(nproc) gd \
-    && pecl install mcrypt-1.0.2 \
-    && docker-php-ext-enable mcrypt
-
-# Install memcached
-RUN apt-get install -y \
-    libmemcached-dev \
     git \
-  && git clone https://github.com/php-memcached-dev/php-memcached /usr/src/php/ext/memcached \
-  && cd /usr/src/php/ext/memcached && git checkout -b php7 origin/php7 \
-  && docker-php-ext-configure memcached \
-  && docker-php-ext-install memcached
+    curl \
+    libxml2-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    jpegoptim \
+    pngquant \
+    openssh-client \
+    libwebp-dev \
+    unzip \
+    zip \
+    debconf-utils \
+    locales \
+    zlib1g-dev \
+    libicu-dev \
+    librabbitmq-dev
 
-# Install intl
-RUN apt-get install -y \
-        libicu-dev \
-        zlib1g-dev \
-        g++ \
-    && docker-php-ext-configure intl \
-    && docker-php-ext-install intl
+RUN docker-php-ext-configure gd --with-png-dir=/usr/include/ --with-jpeg-dir=/usr/include/ --with-webp-dir=/usr/include/
 
-# Install mbstring
-RUN docker-php-ext-install mbstring
+RUN docker-php-ext-configure intl
 
-# Install curl
-RUN apt-get install -y libcurl4-openssl-dev \
-    && docker-php-ext-install curl
+RUN docker-php-ext-install -j$(nproc) pdo_mysql xml bcmath mbstring iconv gd intl opcache
 
-# Install zip
-RUN docker-php-ext-install zip
+RUN pecl install amqp
+RUN docker-php-ext-enable amqp
 
-# Install json
-RUN docker-php-ext-install json
+ENV PHPREDIS_VERSION 3.0.0
 
-# Install extensions through the scripts the container provides
-# Here we install the pdo_mysql extensions to access MySQL.
-RUN docker-php-ext-install pdo pdo_mysql opcache
+RUN echo "memory_limit = 512M\ndate.timezone = Europe/Paris" > /usr/local/etc/php/conf.d/memory-limit.ini
 
-# install xdebug
-RUN pecl install xdebug
-RUN docker-php-ext-enable xdebug \
-    && echo "error_reporting = E_ALL" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "display_startup_errors = On" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "display_errors = On" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "xdebug.remote_enable = 1" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "xdebug.remote_connect_back = 1" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "xdebug.idekey = \"PHPSTORM\"" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "xdebug.remote_port = 9001" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+RUN mkdir -p /usr/src/php/ext/redis \
+    && curl -L https://github.com/phpredis/phpredis/archive/$PHPREDIS_VERSION.tar.gz | tar xvz -C /usr/src/php/ext/redis --strip 1 \
+    && echo 'redis' >> /usr/src/php-available-exts \
+    && docker-php-ext-install -j$(nproc) redis
 
-#opcache.validate_timestamps
-RUN usermod -u 1000 www-data
-RUN echo 'date.timezone="Europe/Paris"' >> /usr/local/etc/php/conf.d/date.ini
-RUN echo 'opcache.enable=1' >> /usr/local/etc/php/conf.d/opcache.conf
-RUN echo 'opcache.validate_timestamps=1' >> /usr/local/etc/php/conf.d/opcache.conf
-RUN echo 'opcache.fast_shutdown=1' >> /usr/local/etc/php/conf.d/opcache.conf
+RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && \
+    php composer-setup.php --install-dir=/usr/local/bin --filename=composer --version=1.10.16 && \
+    php -r "unlink('composer-setup.php');"
+
+RUN echo "Europe/Paris" > /etc/timezone
+RUN dpkg-reconfigure -f noninteractive tzdata
+
+RUN echo "locales locales/default_environment_locale select fr_FR.UTF-8" | debconf-set-selections \
+    && echo "locales locales/locales_to_be_generated multiselect 'fr_FR.UTF-8 UTF-8'" | debconf-set-selections
+
+RUN echo "fr_FR.UTF-8 UTF-8" >> /etc/locale.gen \
+    && locale-gen fr_FR.UTF-8 \
+    && dpkg-reconfigure -f noninteractive locales \
+    && mkdir -p /space/datanfs/yatta/yattacms/storage/audio \
+    /space/datanfs/yatta/yattacms/storage/export \
+    /space/datanfs/yatta/yattacms/storage/image
+
+EXPOSE 8080
+EXPOSE 8081
